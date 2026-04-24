@@ -69,12 +69,140 @@
         }
 
         #toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); background: #2d3436; color: white; padding: 10px 25px; border-radius: 30px; font-size: 0.8em; opacity: 0; transition: 0.3s; pointer-events: none; z-index: 100; }
+
+        /* Style pour les chiffres clés en évidence */
+.exo-stats-highlight {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.stat-pill {
+    background: #f1f2f6;
+    padding: 4px 10px;
+    border-radius: 8px;
+    border: 1px solid #dfe6e9;
+    font-size: 0.85em;
+    color: var(--text);
+}
+
+.stat-pill strong {
+    color: var(--primary);
+    font-size: 1.1em;
+}
+
+/* En-tête de l'exercice en cours */
+.workout-header {
+    background: linear-gradient(135deg, #6c5ce7, #0984e3);
+    margin: -25px -25px 20px -25px; /* Compense le padding de la card */
+    padding: 30px 20px;
+    border-radius: 16px 16px 0 0;
+    color: white;
+    text-align: center;
+}
+
+.workout-header h2 { color: white !important; margin: 0; font-size: 1.5em; }
+
+.target-badge-container {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    margin-top: 15px;
+}
+
+.target-badge {
+    background: rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(5px);
+    padding: 8px 15px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.target-label { font-size: 0.65em; text-transform: uppercase; display: block; opacity: 0.9; }
+.target-value { font-size: 1.2em; font-weight: 800; }
+
+.note-input {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #edf2f7;
+    border-radius: 10px;
+    background: #f8fafc;
+    margin-bottom: 15px;
+}
+
+/* Style du Timer de repos */
+#rest-timer-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.4); /* Fond semi-transparent derrière la popup */
+    display: none;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    backdrop-filter: blur(4px);
+}
+
+.timer-popup {
+    background: #2d3436;
+    color: white;
+    padding: 30px;
+    border-radius: 24px;
+    text-align: center;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+    width: 90%;
+    max-width: 320px;
+    border: 1px solid rgba(255,255,255,0.1);
+    transform: scale(0.9);
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* Animation quand la popup s'affiche */
+#rest-timer-overlay[style*="display: flex"] .timer-popup {
+    transform: scale(1);
+}
+
+#timer-display {
+    font-size: 4rem;
+    font-weight: 900;
+    color: var(--secondary); /* Utilise ta couleur verte */
+    margin: 10px 0;
+    font-variant-numeric: tabular-nums;
+}
+
+.timer-label {
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    font-size: 0.9em;
+    opacity: 0.8;
+}
+
+.btn-skip-timer {
+    background: var(--primary);
+    color: white;
+    border: none;
+    padding: 12px 25px;
+    border-radius: 12px;
+    cursor: pointer;
+    font-weight: bold;
+    width: 100%;
+    margin-top: 15px;
+    transition: 0.2s;
+}
+
+.btn-skip-timer:active { transform: scale(0.95); }
     </style>
 </head>
 <body>
 
 <div class="sidebar" id="sidebar">
     <div class="sidebar-header">🏋️ Dashboard Séance</div>
+    <div style="padding: 10px 12px;">
+        <button onclick="afficherRecords()" class="btn btn-secondary" style="padding: 10px; font-size: 0.8em;">🏆 MES RECORDS (PR)</button>
+    </div>
     <div id="liste-programmes">
         <div class="section-title">Aujourd'hui</div>
         <div id="container-today"></div>
@@ -86,6 +214,16 @@
 </div>
 
 <div class="main-content">
+    <div id="records-screen" class="container-fluid" style="display: none;">
+    <div class="card">
+        <h2 style="margin-top:0; color: var(--accent);">🏆 Records Personnels</h2>
+        <p style="color: #718096; font-size: 0.9em; margin-bottom: 20px;">Tes meilleures charges enregistrées par exercice.</p>
+        <div id="records-list">
+            </div>
+        <button class="btn btn-nav" onclick="location.reload()" style="width: 100%; margin-top: 20px;">RETOUR AU DASHBOARD</button>
+    </div>
+    </div>
+    
     <div class="top-bar-mobile">
         <button onclick="toggleSidebar(true)" style="background:none; border:none; font-size: 1.5em;">☰</button>
         <span id="mobile-title" style="font-weight:bold;">Sélectionner</span>
@@ -130,6 +268,40 @@
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
     import { getFirestore, collection, getDocs, doc, updateDoc, getDoc, addDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+    let restInterval = null;
+
+function startRestTimer(seconds) {
+    const overlay = document.getElementById('rest-timer-overlay');
+    const display = document.getElementById('timer-display');
+    overlay.style.display = 'flex';
+    
+    let timeLeft = seconds;
+    
+    // Fonction de mise à jour de l'affichage
+    const updateDisplay = () => {
+        const mins = Math.floor(timeLeft / 60);
+        const secs = timeLeft % 60;
+        display.innerText = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    };
+
+    updateDisplay();
+
+    restInterval = setInterval(() => {
+        timeLeft--;
+        updateDisplay();
+        
+        if (timeLeft <= 0) {
+            stopRestTimer();
+            // Optionnel : un petit bip ou vibration ici
+            if (navigator.vibrate) navigator.vibrate(200);
+        }
+    }, 1000);
+}
+
+window.stopRestTimer = function() {
+    clearInterval(restInterval);
+    document.getElementById('rest-timer-overlay').style.display = 'none';
+};
 
     const firebaseConfig = {
         apiKey: "AIzaSyCOWw7rzc3GjVFNz_dqVjAxn-vbBTV98L8",
@@ -280,17 +452,20 @@
 
         const summary = document.getElementById('exercise-list-summary');
         summary.innerHTML = currentProg.exercices.map(exo => `
-            <div class="exo-row-summary">
-                <div class="exo-info-main">
-                    <strong>${exo.nom}</strong>
-                    <div class="exo-details-tags">
-                        <span class="tag tag-work">${exo.series} séries de ${exo.reps} rep</span>
-                        <span class="tag tag-rest">⏱️ ${exo.repos}s repos</span>
-                    </div>
-                </div>
-                <span style="color:var(--primary); font-size:1em; font-weight: 800;">${exo.poids} kg</span>
+    <div class="exo-row-summary" style="align-items: flex-start; padding: 16px 0;">
+        <div class="exo-info-main">
+            <strong style="font-size: 1.1em;">${exo.nom}</strong>
+            <div class="exo-stats-highlight">
+                <div class="stat-pill"><strong>${exo.series}</strong> séries</div>
+                <div class="stat-pill"><strong>${exo.reps}</strong> reps</div>
+                <span class="tag tag-rest">⏱️ ${exo.repos}s</span>
             </div>
-        `).join('');
+        </div>
+        <div style="text-align: right;">
+            <div style="font-size: 1.2em; font-weight: 900; color: var(--primary);">${exo.poids} <small>kg</small></div>
+        </div>
+    </div>
+`).join('');
 
         if(window.innerWidth <= 768) toggleSidebar(false);
     }
@@ -302,45 +477,130 @@
     }
 
     function renderExo() {
-        const exo = currentProg.exercices[currentIndex];
-        const totalExos = currentProg.exercices.length;
-        
-        document.getElementById('display-nom').innerText = exo.nom;
-        document.getElementById('display-sub').innerText = `${exo.muscle} / ${exo.equipement}`;
-        document.getElementById('display-rest-active').innerText = `⏱️ Repos : ${exo.repos}s`;
-        document.getElementById('inp-note').value = exo.note || "";
+    const exo = currentProg.exercices[currentIndex];
+    const totalExos = currentProg.exercices.length;
+    
+    // On reconstruit le contenu de la card pour un look plus propre
+    const container = document.getElementById('workout-card-container');
+    container.style.paddingTop = "0"; // Permet au header de coller au haut
 
-        let seriesContainer = document.getElementById('series-container');
-        let htmlSeries = `
-            <div style="position: relative; padding-left: 20px;">
-                <div style="position: absolute; left: 7px; top: 10px; bottom: 10px; width: 2px; background: #e2e8f0; z-index: 1;"></div>
-                <div style="display: grid; grid-template-columns: 40px 1fr 1fr 50px; gap: 10px; font-weight: bold; margin-bottom: 15px; color: #718096; font-size: 0.7em; text-transform: uppercase; position: relative; z-index: 2;">
-                    <span>Sér.</span><span>Reps</span><span>Poids</span><span></span>
+    let html = `
+        <div class="workout-header">
+            <span style="font-size: 0.8em; opacity: 0.8; font-weight: bold;">EXERCICE ${currentIndex + 1} / ${totalExos}</span>
+            <h2>${exo.nom}</h2>
+            <div class="target-badge-container">
+                <div class="target-badge">
+                    <span class="target-label">Objectif</span>
+                    <span class="target-value">${exo.series} x ${exo.reps}</span>
                 </div>
-        `;
-
-        for (let i = 1; i <= parseInt(exo.series); i++) {
-            htmlSeries += `
-                <div id="row-serie-${i}" style="display: grid; grid-template-columns: 40px 1fr 1fr 50px; gap: 10px; align-items: center; margin-bottom: 12px; background: white; padding: 10px; border-radius: 12px; border: 1px solid #edf2f7; position: relative; z-index: 2;">
-                    <div id="dot-serie-${i}" style="position: absolute; left: -17px; top: 50%; transform: translateY(-50%); width: 10px; height: 10px; border-radius: 50%; background: #cbd5e0; border: 2px solid white; z-index: 3;"></div>
-                    <span style="font-weight: 800; color: var(--primary); text-align: center;">${i}</span>
-                    <input type="number" class="serie-reps" id="reps-${i}" value="${exo.reps}" style="width: 100%; border: 1px solid #eee; border-radius: 6px; padding: 8px; text-align: center;">
-                    <input type="number" class="serie-poids" id="poids-${i}" value="${exo.poids}" step="0.5" style="width: 100%; border: 1px solid #eee; border-radius: 6px; padding: 8px; text-align: center; font-weight: bold; color: var(--primary);">
-                    <button onclick="validerSerie(${i}, this)" style="background: #f8fafc; border: 1px solid #eee; color: #94a3b8; border-radius: 8px; height: 40px; cursor: pointer; font-weight: bold;">OK</button>
+                <div class="target-badge">
+                    <span class="target-label">Charge</span>
+                    <span class="target-value">${exo.poids} kg</span>
                 </div>
-            `;
-        }
-        htmlSeries += `</div>`;
-        seriesContainer.innerHTML = htmlSeries;
+            </div>
+        </div>
 
-        document.getElementById('progress-fill').style.width = ((currentIndex + 1) / totalExos * 100) + "%";
-        document.getElementById('btn-precedent').style.visibility = currentIndex === 0 ? 'hidden' : 'visible';
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <span style="color:#718096; font-size:0.85em;">📍 ${exo.muscle}</span>
+            <span id="display-rest-active" style="color:var(--secondary); font-weight: bold;">⏱️ Repos : ${exo.repos}s</span>
+        </div>
+
+        <div id="series-container" style="margin: 20px 0;"></div>
         
-        const isLast = currentIndex === totalExos - 1;
-        document.getElementById('btn-suivant').style.display = isLast ? 'none' : 'block';
-        document.getElementById('btn-passer').style.display = isLast ? 'none' : 'block';
-        document.getElementById('btn-terminer').style.display = isLast ? 'block' : 'none';
+        <input type="text" id="inp-note" class="note-input" placeholder="Ajouter une note sur cet exercice..." value="${exo.note || ""}">
+        
+        <div style="display:flex; gap:10px;">
+            <button class="btn btn-nav" id="btn-precedent" style="flex: 0.5;">←</button>
+            <button class="btn btn-skip" id="btn-passer">Passer</button>
+            <button class="btn btn-primary" id="btn-suivant" style="flex: 2;">Suivant →</button>
+        </div>
+        <button class="btn btn-secondary" id="btn-terminer" style="display:none; margin-top:10px; width: 100%;">TERMINER LA SÉANCE ✅</button>
+    `;
+
+    container.innerHTML = html;
+
+    // Rendu des lignes de séries (Logique identique à la tienne mais injectée dans le nouveau HTML)
+    renderSeriesRows(exo);
+
+    // Mise à jour des barres et boutons
+    document.getElementById('progress-fill').style.width = ((currentIndex + 1) / totalExos * 100) + "%";
+    document.getElementById('btn-precedent').style.visibility = currentIndex === 0 ? 'hidden' : 'visible';
+    const isLast = currentIndex === totalExos - 1;
+    const btnTerminer = document.getElementById('btn-terminer');
+    const btnSuivant = document.getElementById('btn-suivant');
+    const btnPasser = document.getElementById('btn-passer');
+
+    if (isLast) {
+        btnSuivant.style.display = 'none';
+        btnPasser.style.display = 'none';
+        btnTerminer.style.display = 'block';
+        
+        // On attache explicitement la fonction de sauvegarde ici
+        btnTerminer.onclick = terminerSeanceLogique; 
     }
+
+    // Réattacher les autres événements
+    btnSuivant.onclick = () => { currentIndex++; renderExo(); };
+    btnPasser.onclick = () => { currentIndex++; renderExo(); };
+    document.getElementById('btn-precedent').onclick = () => { if(currentIndex > 0) { currentIndex--; renderExo(); } };
+    document.getElementById('inp-note').onblur = quickSave;
+    document.getElementById('display-rest-active').innerText = `⏱️ Repos : ${exo.repos} min`;
+}
+
+async function terminerSeanceLogique() {
+    try {
+        showToast("Enregistrement en cours...");
+        
+        // 1. Sauvegarder dans l'historique Firestore
+        await addDoc(collection(db, "historique_seances"), {
+            nomProgramme: currentProg.nom,
+            date: new Date().toISOString(),
+            exercices: currentProg.exercices
+        });
+
+        // 2. Affichage de l'écran de succès
+        const workoutCard = document.getElementById('workout-card-container');
+        workoutCard.style.paddingTop = "25px"; // On remet du padding pour le succès
+        workoutCard.innerHTML = `
+            <div style="text-align: center; padding: 20px;">
+                <div style="font-size: 5em; margin-bottom: 20px;">🏆</div>
+                <h2 style="color: var(--secondary); margin-bottom: 10px;">Séance Terminée !</h2>
+                <p style="color: #718096; margin-bottom: 25px;">Excellent travail. Ton programme est enregistré dans l'historique.</p>
+                <button class="btn btn-primary" onclick="location.reload()" style="width: 100%;">
+                    RETOUR AU DASHBOARD
+                </button>
+            </div>
+        `;
+        
+        showToast("Séance enregistrée ! 🎉");
+    } catch (e) { 
+        console.error("Erreur Firebase:", e);
+        alert("Erreur lors de l'enregistrement. Vérifie ta connexion.");
+    }
+}
+
+// Fonction auxiliaire pour les séries pour garder renderExo lisible
+function renderSeriesRows(exo) {
+    let seriesContainer = document.getElementById('series-container');
+    let htmlSeries = `
+        <div style="position: relative; padding-left: 20px;">
+            <div style="position: absolute; left: 7px; top: 10px; bottom: 10px; width: 2px; background: #e2e8f0; z-index: 1;"></div>
+    `;
+
+    for (let i = 1; i <= parseInt(exo.series); i++) {
+        htmlSeries += `
+            <div id="row-serie-${i}" style="display: grid; grid-template-columns: 40px 1fr 1fr 50px; gap: 10px; align-items: center; margin-bottom: 12px; background: white; padding: 10px; border-radius: 12px; border: 1px solid #edf2f7; position: relative; z-index: 2; box-shadow: 0 2px 5px rgba(0,0,0,0.02);">
+                <div id="dot-serie-${i}" style="position: absolute; left: -17px; top: 50%; transform: translateY(-50%); width: 10px; height: 10px; border-radius: 50%; background: #cbd5e0; border: 2px solid white; z-index: 3;"></div>
+                <span style="font-weight: 800; color: var(--primary); text-align: center;">${i}</span>
+                <input type="number" class="serie-reps" id="reps-${i}" value="${exo.reps}" style="width: 100%; border: 1px solid #eee; border-radius: 6px; padding: 8px; text-align: center;">
+                <input type="number" class="serie-poids" id="poids-${i}" value="${exo.poids}" step="0.5" style="width: 100%; border: 1px solid #eee; border-radius: 6px; padding: 8px; text-align: center; font-weight: bold; color: var(--primary);">
+                <button onclick="validerSerie(${i}, this)" style="background: #f8fafc; border: 1px solid #eee; color: #94a3b8; border-radius: 8px; height: 40px; cursor: pointer; font-weight: bold;">OK</button>
+            </div>
+        `;
+    }
+    htmlSeries += `</div>`;
+    seriesContainer.innerHTML = htmlSeries;
+}
 
     window.validerSerie = async function(index, btn) {
         const row = document.getElementById(`row-serie-${index}`);
@@ -367,6 +627,11 @@
             exo.poids = pSaisi; exo.reps = rSaisi;
         }
         await quickSave();
+        if (exo.repos > 0) {
+                // Conversion : Minutes * 60 = Secondes
+                const reposEnSecondes = Math.round(exo.repos * 60); 
+                startRestTimer(reposEnSecondes);
+            }
     }
 
     async function quickSave() {
@@ -418,7 +683,68 @@
     window.toggleSidebar = (show) => { document.getElementById('sidebar').classList.toggle('hidden', !show); };
     document.getElementById('inp-note').onblur = quickSave;
 
+window.afficherRecords = function() {
+    // Masquer les autres écrans
+    document.getElementById('empty-state').style.display = 'none';
+    document.getElementById('overview-screen').style.display = 'none';
+    document.getElementById('workout-view').style.display = 'none';
+    const recordsScreen = document.getElementById('records-screen');
+    recordsScreen.style.display = 'block';
+    
+    document.getElementById('mobile-title').innerText = "Records";
+
+    const recordsContainer = document.getElementById('records-list');
+    const recordsMap = {};
+
+    // 1. Analyser l'historique pour trouver les MAX
+    window.historiqueData.forEach(seance => {
+        seance.exercices.forEach(exo => {
+            const nom = exo.nom;
+            let maxPoidsExo = 0;
+
+            // Chercher dans les séries faites
+            if (exo.series_faites) {
+                maxPoidsExo = Math.max(...exo.series_faites.map(s => s.poids || 0));
+            } else {
+                maxPoidsExo = exo.poids || 0;
+            }
+
+            if (!recordsMap[nom] || maxPoidsExo > recordsMap[nom].poids) {
+                recordsMap[nom] = {
+                    poids: maxPoidsExo,
+                    date: new Date(seance.date).toLocaleDateString('fr-FR')
+                };
+            }
+        });
+    });
+
+    // 2. Générer le HTML
+    const alertNoData = "<p style='text-align:center; color:#a0aec0;'>Aucune donnée d'entraînement trouvée.</p>";
+    const listeExercices = Object.keys(recordsMap).sort();
+
+    recordsContainer.innerHTML = listeExercices.length > 0 ? listeExercices.map(nom => `
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 15px 0; border-bottom: 1px solid #f0f0f0;">
+            <div>
+                <strong style="display: block; color: var(--text);">${nom}</strong>
+                <span style="font-size: 0.75em; color: #a0aec0;">Record du ${recordsMap[nom].date}</span>
+            </div>
+            <div style="background: #f3f0ff; color: var(--accent); padding: 8px 15px; border-radius: 12px; font-weight: 900; font-size: 1.1em;">
+                ${recordsMap[nom].poids} <small>kg</small>
+            </div>
+        </div>
+    `).join('') : alertNoData;
+
+    if(window.innerWidth <= 768) toggleSidebar(false);
+};
+
     chargerSidebar();
 </script>
+<div id="rest-timer-overlay">
+    <div class="timer-popup">
+        <div class="timer-label">TEMPS DE REPOS</div>
+        <div id="timer-display">00:00</div>
+        <button class="btn-skip-timer" onclick="stopRestTimer()">TERMINER LE REPOS</button>
+    </div>
+</div>
 </body>
 </html>
